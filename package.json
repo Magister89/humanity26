@@ -1,0 +1,12 @@
+{
+  "name": "humanity-bsod",
+  "version": "1.0.0",
+  "description": "A satirical Windows 98 BSOD that comments on current events",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@vercel/kv": "^2.0.0"
+  }
+}
