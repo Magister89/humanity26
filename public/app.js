@@ -327,7 +327,6 @@
             elements.shellScreen.classList.add('hidden');
             secretSequenceActive = false;
             isRebooting = false;
-            localStorage.removeItem('humanity-bsod-cache');
             simulateReboot();
           });
         }
