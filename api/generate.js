@@ -167,9 +167,12 @@ export default async function handler(req, res) {
 
     bsod.generatedAt = new Date().toISOString();
 
-    try {
-      await kv.set(hourKey, bsod, { ex: 3600 });
-    } catch (kvError) {}
+    const isGenerationError = bsod.errorCode?.includes('GENERATION_FAULT');
+    if (!isGenerationError) {
+      try {
+        await kv.set(hourKey, bsod, { ex: 3600 });
+      } catch (kvError) {}
+    }
 
     return res.status(200).json({
       bsod,
