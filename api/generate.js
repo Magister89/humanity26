@@ -108,12 +108,13 @@ Respond with ONLY the JSON object.`;
 
     return bsod;
   } catch (error) {
+    console.error('AI Generation Error:', error.message, error.stack);
     return {
       errorCode: '0xAI_GENERATION_FAULT',
       address: '0028:DEADBEEF',
       vxd: 'CREATIVITY.DLL',
       offset: '00000000',
-      message: 'An exception occurred in module HUMOR.SYS. The system attempted to generate satire but encountered an unexpected REALITY_OVERFLOW. Humanity continues to exceed all expectations for absurdity.'
+      message: `AI_ERROR: ${error.message}`
     };
   }
 }
