@@ -94,6 +94,15 @@
     elements.errorOffset.textContent = bsod.offset || '00000000';
     elements.errorMessage.textContent = bsod.message;
     expiresAt = new Date(data.expiresAt).getTime();
+
+    var remaining = Math.floor((expiresAt - Date.now()) / 1000);
+    if (remaining <= 5) {
+      elements.bsod.classList.remove('loading');
+      elements.bsod.classList.remove('error-state');
+      setTimeout(fetchBSOD, 2000);
+      return;
+    }
+
     cacheData(data);
     elements.bsod.classList.remove('loading');
     elements.bsod.classList.remove('error-state');
