@@ -2,6 +2,15 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { kv } from '@vercel/kv';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+const CRON_SECRET = process.env.CRON_SECRET;
+
+const FALLBACK_BSOD = {
+  errorCode: '0E_CACHE_MISS',
+  address: '0028:C0011E36',
+  vxd: 'VPATIENCE.VXD',
+  offset: '00010E36',
+  message: 'A page fault occurred while loading HUMANITY.SYS. The system is waiting for scheduled maintenance. Please wait for the next cycle or press any key to display a sarcastic message.'
+};
 
 function getHourKey() {
   const now = new Date();
@@ -118,6 +127,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const authHeader = req.headers['authorization'];
+  const isAuthorized = CRON_SECRET && authHeader === `Bearer ${CRON_SECRET}`;
+
   try {
     const hourKey = getHourKey();
     const expiresAt = getExpirationTime();
@@ -133,6 +145,16 @@ export default async function handler(req, res) {
         generatedAt: cached.generatedAt,
         expiresAt: expiresAt.toISOString(),
         cached: true
+      });
+    }
+
+    if (!isAuthorized) {
+      const fallback = { ...FALLBACK_BSOD, generatedAt: new Date().toISOString() };
+      return res.status(200).json({
+        bsod: fallback,
+        generatedAt: fallback.generatedAt,
+        expiresAt: expiresAt.toISOString(),
+        cached: false
       });
     }
 
