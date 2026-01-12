@@ -130,23 +130,26 @@ export default async function handler(req, res) {
 
   const authHeader = req.headers['authorization'];
   const isAuthorized = CRON_SECRET && authHeader === `Bearer ${CRON_SECRET}`;
+  const forceRefresh = req.query.force === 'true' && isAuthorized;
 
   try {
     const hourKey = getHourKey();
     const expiresAt = getExpirationTime();
 
     let cached = null;
-    try {
-      cached = await kv.get(hourKey);
-    } catch (kvError) {}
+    if (!forceRefresh) {
+      try {
+        cached = await kv.get(hourKey);
+      } catch (kvError) {}
 
-    if (cached) {
-      return res.status(200).json({
-        bsod: cached,
-        generatedAt: cached.generatedAt,
-        expiresAt: expiresAt.toISOString(),
-        cached: true
-      });
+      if (cached) {
+        return res.status(200).json({
+          bsod: cached,
+          generatedAt: cached.generatedAt,
+          expiresAt: expiresAt.toISOString(),
+          cached: true
+        });
+      }
     }
 
     if (!isAuthorized) {
