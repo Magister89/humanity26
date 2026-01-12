@@ -70,9 +70,24 @@ The following environment variables must be set in SYSTEM.INI:
 
 ```
 [HUMANITY26]
-GEMINI_API_KEY=<Your Google Gemini API Key>
+GOOGLE_AI_API_KEY=<Your Google Gemini API Key>
 KV_REST_API_URL=<Vercel KV REST API URL>
 KV_REST_API_TOKEN=<Vercel KV REST API Token>
+CRON_SECRET=<Secret token for scheduled tasks>
+```
+
+## SCHEDULED TASKS
+
+HUMANITY26 requires an external CRON.VXD driver to generate hourly content.
+Without scheduled execution, users will receive a fallback BSOD message.
+
+```
+CRON CONFIGURATION (cron-job.org)
+═════════════════════════════════
+URL:        https://your-domain.vercel.app/api/generate
+SCHEDULE:   0 * * * * (every hour at minute 0)
+METHOD:     GET
+HEADER:     Authorization: Bearer <CRON_SECRET value>
 ```
 
 ## DEPLOYMENT
@@ -94,6 +109,9 @@ SOLUTION: Wait for hourly refresh or press DELETE to force reboot
 
 PROBLEM: No sarcastic messages appearing
 SOLUTION: Press any alphabetic key on your keyboard
+
+PROBLEM: Showing "VPATIENCE.VXD" fallback message
+SOLUTION: Verify CRON.VXD is properly configured and executing hourly
 ```
 
 ## LICENSE
