@@ -40,7 +40,7 @@ async function fetchNewsHeadlines() {
     const regex = /<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/g;
     let match = regex.exec(xml);
 
-    while (match !== null && titles.length < 10) {
+    while (match !== null && titles.length < 3) {
       const title = match[1] || match[2];
       if (title && title !== 'Google News' && title.trim().length > 0) {
         titles.push(title.trim());
@@ -48,7 +48,7 @@ async function fetchNewsHeadlines() {
       match = regex.exec(xml);
     }
 
-    return titles.slice(0, 8);
+    return titles;
   } catch (error) {
     return [
       'World leaders meet for emergency climate summit',
