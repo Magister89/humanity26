@@ -1,6 +1,7 @@
 {
   "name": "humanity-bsod",
   "version": "1.0.0",
+  "type": "module",
   "description": "A satirical Windows 98 BSOD that comments on current events",
   "scripts": {
     "dev": "vercel dev"
