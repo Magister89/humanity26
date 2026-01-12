@@ -24,6 +24,7 @@
   var countdownInterval = null;
   var expiresAt = null;
   var isRebooting = false;
+  var isWaitingForCron = false;
   var sarcasticTimeout = null;
   var secretKeysPressed = {};
   var secretSequenceActive = false;
@@ -68,8 +69,78 @@
     if (remaining <= 0) {
       clearInterval(countdownInterval);
       localStorage.removeItem('humanity-bsod-cache');
-      simulateReboot();
+      waitForNewData();
     }
+  }
+
+  function waitForNewData() {
+    if (isWaitingForCron || isRebooting) return;
+    isWaitingForCron = true;
+
+    var pollStartTime = Date.now();
+    var maxPollDuration = 2 * 60 * 1000;
+
+    elements.bsod.style.display = 'none';
+    elements.blackScreen.classList.remove('hidden');
+
+    setTimeout(function() {
+      elements.blackScreen.classList.add('hidden');
+      elements.bootScreen.classList.remove('hidden');
+      if (elements.bootTagline) elements.bootTagline.textContent = 'Waiting for CRON.VXD...';
+      if (elements.bootProgressBar) elements.bootProgressBar.style.width = '90%';
+
+      pollForCachedData(pollStartTime, maxPollDuration);
+    }, 500);
+  }
+
+  function pollForCachedData(startTime, maxDuration) {
+    fetch('/api/generate')
+      .then(function(response) {
+        if (!response.ok) throw new Error('HTTP error');
+        return response.json();
+      })
+      .then(function(data) {
+        if (data.error) throw new Error(data.error);
+
+        var elapsed = Date.now() - startTime;
+
+        if (data.cached) {
+          finishWaitingForCron(data);
+        } else if (elapsed >= maxDuration) {
+          finishWaitingForCron(data);
+        } else {
+          setTimeout(function() {
+            pollForCachedData(startTime, maxDuration);
+          }, 5000);
+        }
+      })
+      .catch(function() {
+        var elapsed = Date.now() - startTime;
+        if (elapsed >= maxDuration) {
+          finishWaitingForCron(null);
+        } else {
+          setTimeout(function() {
+            pollForCachedData(startTime, maxDuration);
+          }, 5000);
+        }
+      });
+  }
+
+  function finishWaitingForCron(data) {
+    if (elements.bootProgressBar) elements.bootProgressBar.style.width = '100%';
+    if (elements.bootTagline) elements.bootTagline.textContent = 'Rebooting civilization...';
+
+    setTimeout(function() {
+      elements.bootScreen.classList.add('hidden');
+      if (elements.bootProgressBar) elements.bootProgressBar.style.width = '0%';
+      elements.bsod.style.display = '';
+      isWaitingForCron = false;
+      if (data) {
+        updateBSOD(data);
+      } else {
+        fetchBSOD();
+      }
+    }, 800);
   }
 
   function startCountdown() {
@@ -346,7 +417,7 @@
   }
 
   function handleKeydown(event) {
-    if (isRebooting) return;
+    if (isRebooting || isWaitingForCron) return;
 
     var key = event.key.toLowerCase();
 
