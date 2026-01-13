@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { kv } from '@vercel/kv';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
 const CRON_SECRET = process.env.CRON_SECRET;
 
 const FALLBACK_BSOD = {
@@ -60,8 +60,6 @@ async function fetchNewsHeadlines() {
 }
 
 async function generateBSOD(headlines) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
   const prompt = `You are a satirical Windows 98 Blue Screen of Death error message generator. Generate darkly humorous BSOD messages commenting on humanity's failures based on current news.
 
 IMPORTANT: Respond ONLY with valid JSON. No markdown, no code blocks.
@@ -94,9 +92,11 @@ Message guidelines:
 Respond with ONLY the JSON object.`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    let text = response.text().trim();
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    let text = response.text.trim();
 
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
 
