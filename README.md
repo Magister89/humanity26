@@ -51,7 +51,7 @@ COMPONENT               DRIVER/MODULE
 Frontend                HTML/CSS/JS (Vanilla)
 Backend                 Vercel Serverless Functions
 AI Engine               Google Gemini 2.5 Flash
-Cache System            Vercel KV (Redis)
+Cache System            Upstash Redis
 News Feed               Google News RSS
 ```
 
@@ -71,8 +71,8 @@ The following environment variables must be set in SYSTEM.INI:
 ```
 [HUMANITY26]
 GOOGLE_AI_API_KEY=<Your Google Gemini API Key>
-KV_REST_API_URL=<Vercel KV REST API URL>
-KV_REST_API_TOKEN=<Vercel KV REST API Token>
+UPSTASH_REDIS_REST_URL=<Upstash Redis REST API URL>
+UPSTASH_REDIS_REST_TOKEN=<Upstash Redis REST API Token>
 CRON_SECRET=<Secret token for scheduled tasks>
 ```
 

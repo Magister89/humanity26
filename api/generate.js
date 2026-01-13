@@ -1,7 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+const redis = Redis.fromEnv();
 const CRON_SECRET = process.env.CRON_SECRET;
 
 const FALLBACK_BSOD = {
@@ -139,7 +140,7 @@ export default async function handler(req, res) {
     let cached = null;
     if (!forceRefresh) {
       try {
-        cached = await kv.get(hourKey);
+        cached = await redis.get(hourKey);
       } catch (kvError) {}
 
       if (cached) {
@@ -170,7 +171,7 @@ export default async function handler(req, res) {
     const isGenerationError = bsod.errorCode?.includes('GENERATION_FAULT');
     if (!isGenerationError) {
       try {
-        await kv.set(hourKey, bsod, { ex: 3600 });
+        await redis.set(hourKey, bsod, { ex: 3600 });
       } catch (kvError) {}
     }
 
