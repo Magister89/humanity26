@@ -73,8 +73,8 @@ The following environment variables are supported in SYSTEM.INI:
 [HUMANITY26]
 ZAI_API_KEY=<Your Z.AI API key>
 ZAI_MODEL=<Optional model override; defaults to glm-5.3>
-UPSTASH_REDIS_REST_URL=<Upstash Redis REST API URL>
-UPSTASH_REDIS_REST_TOKEN=<Upstash Redis REST API Token>
+KV_REST_API_URL=<Vercel-managed Upstash Redis REST API URL>
+KV_REST_API_TOKEN=<Vercel-managed Upstash Redis REST API token>
 CRON_SECRET=<Secret token for scheduled tasks>
 MESSAGE_KEY=<64-character hexadecimal AES-256 key>
 MESSAGE_COMBO=<Sorted lowercase letters for the shell easter egg>
@@ -115,7 +115,9 @@ Client addresses supplied by Vercel's trusted proxy headers are HMAC-hashed
 before the Upstash key is created, and Redis failures fail closed with HTTP 503
 rather than bypassing the limit. `RATE_LIMIT_SECRET` falls back to `MESSAGE_KEY`
 locally, but a dedicated production secret avoids coupling identity hashes to key
-rotation. Legacy `KV_REST_API_URL` / `KV_REST_API_TOKEN` names remain supported.
+rotation. Redis uses only the `KV_REST_API_*` credentials synchronized by the
+Vercel Upstash integration so future provider rotations cannot leave a stale
+manual alias in front of the managed secret.
 
 ## CONTINUOUS INTEGRATION
 
