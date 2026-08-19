@@ -1,13 +1,18 @@
 {
   "name": "humanity-bsod",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "description": "A satirical Windows 98 BSOD that comments on current events",
   "scripts": {
-    "dev": "vercel dev"
+    "dev": "vercel dev",
+    "check": "node --check api/generate.js && node --check api/shell.js && node --check api/_lib/redis.js && node --check api/_lib/rate-limit.js && node --check public/app.js",
+    "test": "node --test"
   },
   "dependencies": {
-    "@google/genai": "^1.35.0",
     "@upstash/redis": "^1.36.1"
   }
 }

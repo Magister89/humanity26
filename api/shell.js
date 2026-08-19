@@ -1,58 +1,105 @@
-import crypto from 'crypto';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.setHeader('Content-Type', 'application/json');
+import {
+  consumeRateLimit,
+  getClientIdentifier,
+  setRateLimitHeaders
+} from './_lib/rate-limit.js';
+import { getDefaultRedis } from './_lib/redis.js';
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+export function createShellHandler({
+  getRedis = getDefaultRedis,
+  limitAttempt = consumeRateLimit,
+  identifyClient = getClientIdentifier,
+  now = () => Date.now(),
+  rateLimitOptions,
+  logger = console
+} = {}) {
+  return async function handler(req, res) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'application/json');
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
 
-  const key = process.env.MESSAGE_KEY;
-  const combo = process.env.MESSAGE_COMBO;
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST, OPTIONS');
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
 
-  if (!key || !combo) {
-    return res.status(500).json({ error: 'Server not configured' });
-  }
+    const key = process.env.MESSAGE_KEY;
+    const combo = process.env.MESSAGE_COMBO;
 
-  const { keys } = req.body || {};
+    if (!key || !combo) {
+      return res.status(500).json({ error: 'Server not configured' });
+    }
 
-  if (!keys || !Array.isArray(keys)) {
-    return res.status(400).json({ error: 'Invalid request' });
-  }
+    const requestTime = now();
+    const rateLimitSecret = process.env.RATE_LIMIT_SECRET || key;
 
-  const submitted = keys.map(k => k.toLowerCase()).sort().join('');
+    try {
+      const redis = getRedis();
+      const identifier = identifyClient(req, rateLimitSecret);
+      const rateLimit = await limitAttempt(redis, identifier, requestTime, rateLimitOptions);
+      setRateLimitHeaders(res, rateLimit, requestTime);
 
-  if (submitted !== combo) {
-    return res.status(403).json({ error: 'Access denied' });
-  }
+      if (!rateLimit.allowed) {
+        return res.status(429).json({ error: 'Too many attempts' });
+      }
+    } catch (error) {
+      logger.error?.('Shell rate limit failed', {
+        message: error instanceof Error ? error.message : String(error)
+      });
+      return res.status(503).json({ error: 'Rate limit unavailable' });
+    }
 
-  try {
-    const encryptedPath = join(process.cwd(), 'data', 'message.enc.json');
-    const encryptedData = JSON.parse(readFileSync(encryptedPath, 'utf8'));
+    const { keys } = req.body || {};
 
-    const decipher = crypto.createDecipheriv(
-      'aes-256-gcm',
-      Buffer.from(key, 'hex'),
-      Buffer.from(encryptedData.iv, 'hex')
-    );
-    decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+    if (
+      !Array.isArray(keys) ||
+      keys.length === 0 ||
+      keys.length > 26 ||
+      !keys.every(keyName => typeof keyName === 'string' && /^[a-z]$/i.test(keyName))
+    ) {
+      return res.status(400).json({ error: 'Invalid request' });
+    }
 
-    let decrypted = decipher.update(encryptedData.data, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
+    const submitted = keys.map(keyName => keyName.toLowerCase()).sort().join('');
+    const submittedBuffer = Buffer.from(submitted);
+    const comboBuffer = Buffer.from(combo);
 
-    const message = JSON.parse(decrypted);
+    if (
+      submittedBuffer.length !== comboBuffer.length ||
+      !crypto.timingSafeEqual(submittedBuffer, comboBuffer)
+    ) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
-    return res.status(200).json({ message });
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to decrypt message' });
-  }
+    try {
+      const encryptedPath = join(process.cwd(), 'data', 'message.enc.json');
+      const encryptedData = JSON.parse(readFileSync(encryptedPath, 'utf8'));
+
+      const decipher = crypto.createDecipheriv(
+        'aes-256-gcm',
+        Buffer.from(key, 'hex'),
+        Buffer.from(encryptedData.iv, 'hex')
+      );
+      decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+
+      let decrypted = decipher.update(encryptedData.data, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+
+      return res.status(200).json({ message: JSON.parse(decrypted) });
+    } catch (error) {
+      logger.error?.('Shell decryption failed', {
+        name: error instanceof Error ? error.name : 'Error'
+      });
+      return res.status(500).json({ error: 'Failed to decrypt message' });
+    }
+  };
 }
+
+export default createShellHandler();

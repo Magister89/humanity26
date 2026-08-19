@@ -1,0 +1,175 @@
+name: Hourly generation monitor
+
+on:
+  schedule:
+    # The primary cron-job.org request runs at minute 0. This delayed run is a
+    # no-cost cache check when the primary succeeds and a retry when it fails.
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: humanity26-hourly-generation
+  cancel-in-progress: false
+
+jobs:
+  generate-or-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger generation or verify the hourly cache
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BSOD_BASE_URL: ${{ vars.BSOD_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CRON_SECRET:-}" ]]; then
+            echo "CRON_SECRET is not configured in GitHub Actions." >&2
+            exit 1
+          fi
+          if [[ -z "${BSOD_BASE_URL:-}" || "$BSOD_BASE_URL" != https://* ]]; then
+            echo "BSOD_BASE_URL must be a configured HTTPS origin." >&2
+            exit 1
+          fi
+
+          generate_url="${BSOD_BASE_URL%/}/api/generate"
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          http_code="$(
+            curl \
+              --silent \
+              --show-error \
+              --connect-timeout 10 \
+              --max-time 55 \
+              --retry 2 \
+              --retry-all-errors \
+              --retry-delay 10 \
+              --retry-max-time 180 \
+              --header "Authorization: Bearer ${CRON_SECRET}" \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              "$generate_url"
+          )"
+
+          node - "$response_file" "$http_code" <<'NODE'
+          const fs = require('node:fs');
+
+          const responsePath = process.argv[2];
+          const status = Number(process.argv[3]);
+          const raw = fs.readFileSync(responsePath, 'utf8');
+
+          if (!Number.isInteger(status) || status < 200 || status >= 300) {
+            throw new Error(`Generation endpoint returned HTTP ${status || 'unknown'}`);
+          }
+          if (raw.length > 100_000) {
+            throw new Error('Generation response exceeded 100 KB');
+          }
+
+          const payload = JSON.parse(raw);
+          if (payload.error || !payload.bsod || !payload.generatedAt || !payload.expiresAt) {
+            throw new Error('Generation endpoint returned an invalid payload');
+          }
+          if (
+            payload.fallback === true ||
+            payload.stale === true ||
+            payload.bsod.errorCode === '0E_CACHE_MISS'
+          ) {
+            throw new Error('Generation endpoint returned fallback or stale content');
+          }
+          if (payload.cached === false) {
+            console.log('::warning::The primary cron missed this hour; the GitHub backup generated fresh content.');
+          }
+
+          const generatedAt = Date.parse(payload.generatedAt);
+          const ageMs = Date.now() - generatedAt;
+          if (!Number.isFinite(generatedAt) || ageMs < -5 * 60_000 || ageMs > 70 * 60_000) {
+            throw new Error('Generation endpoint returned stale or future-dated content');
+          }
+
+          const summary = {
+            status,
+            cached: payload.cached,
+            stale: payload.stale,
+            fallback: payload.fallback,
+            generatedAt: payload.generatedAt,
+            expiresAt: payload.expiresAt,
+            errorCode: payload.bsod.errorCode,
+            vxd: payload.bsod.vxd
+          };
+
+          console.log(JSON.stringify(summary, null, 2));
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            fs.appendFileSync(
+              process.env.GITHUB_STEP_SUMMARY,
+              `### Hourly generation\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\`\n`
+            );
+          }
+          NODE
+
+  update-incident:
+    needs: generate-or-verify
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Open, update, or resolve the generation incident
+        uses: actions/github-script@v7
+        env:
+          MONITOR_RESULT: ${{ needs.generate-or-verify.result }}
+        with:
+          script: |
+            const title = "[monitor] Hourly generation is failing";
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100
+            });
+            const incident = issues.find(issue => !issue.pull_request && issue.title === title);
+            const result = process.env.MONITOR_RESULT;
+            const failed = result === "failure";
+
+            if (result !== "success" && !failed) {
+              core.notice(`No incident update for monitor result: ${result}`);
+              return;
+            }
+
+            if (failed && incident) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: incident.number,
+                body: `The hourly monitor failed again: ${runUrl}`
+              });
+            } else if (failed) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: `The hourly generation monitor failed. Inspect the run: ${runUrl}`
+              });
+            } else if (incident) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: incident.number,
+                body: `Generation recovered: ${runUrl}`
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: incident.number,
+                state: "closed",
+                state_reason: "completed"
+              });
+            }
